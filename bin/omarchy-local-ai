@@ -665,10 +665,15 @@ argv() {
     ;;
   crush)
     mkdir -p "$ag/crush"
-    jq -nc --arg u "$ep/v1" --arg m "$m" --arg k "$(<"$KEY")" --argjson ctx "$ctx" --argjson v "$vis" '
+    local laya=$HOME_DIR/Projects/local-laya mcp='{}'
+    [[ ${LAYA_MCP:-on} != off && -f $laya/laya-mcp.py && -x $laya/.venv/bin/python ]] &&
+      mcp=$(jq -nc --arg l "$laya" '{laya:{type:"stdio",command:($l+"/.venv/bin/python"),args:[($l+"/laya-mcp.py")]}}')
+    jq -nc --arg u "$ep/v1" --arg m "$m" --arg k "$(<"$KEY")" --argjson ctx "$ctx" --argjson v "$vis" \
+      --argjson mcp "$mcp" '
       {providers: {"omarchy-local": {type: "openai", name: "Omarchy Local", base_url: $u, api_key: $k,
         models: [{id: $m, name: $m, context_window: $ctx, default_max_tokens: 8192, supports_attachments: $v}]}},
-       models: {large: {provider: "omarchy-local", model: $m}, small: {provider: "omarchy-local", model: $m}}}' >"$ag/crush/crush.json"
+       models: {large: {provider: "omarchy-local", model: $m}, small: {provider: "omarchy-local", model: $m}},
+       mcp: $mcp} | if .mcp == {} then del(.mcp) else . end' >"$ag/crush/crush.json"
     printf '%s\0' env "XDG_CONFIG_HOME=$ag" "XDG_DATA_HOME=$ag" "$b"
     ;;
   copilot)
@@ -679,6 +684,12 @@ argv() {
     printf '[models]\ndefault = "omarchy-local"\n[features]\nremote_fetch = false\ntelemetry = false\n' >"$ag/config.toml"
     printf '[model.omarchy-local]\nmodel = %s\nbase_url = %s\ncontext_window = %s\nenv_key = "XAI_API_KEY"\n' \
       "$(jq -n --arg v "$m" '$v')" "$(jq -n --arg v "$ep/v1" '$v')" "$ctx" >>"$ag/config.toml"
+    local laya=$HOME_DIR/Projects/local-laya
+    if [[ ${LAYA_MCP:-on} != off && -f $laya/laya-mcp.py && -x $laya/.venv/bin/python ]]; then
+      printf '[mcp_servers.laya]\ncommand = %s\nargs = [%s]\n' \
+        "$(jq -n --arg v "$laya/.venv/bin/python" '$v')" \
+        "$(jq -n --arg v "$laya/laya-mcp.py" '[$v]')" >>"$ag/config.toml"
+    fi
     keyed XAI_API_KEY
     printf '%s\0' env "GROK_HOME=$ag" "$b" --model omarchy-local
     ;;
